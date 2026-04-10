@@ -3,6 +3,8 @@ import Dashboard from './pages/Dashboard';
 import PredictionPanel from './components/PredictionPanel';
 import { ping, getHistory } from './services/api';
 
+const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
 // ── Toast notification ────────────────────────────────────────────────────────
 function Toast({ message, type, onClose }) {
   useEffect(() => {
@@ -27,11 +29,51 @@ function Toast({ message, type, onClose }) {
   );
 }
 
+// ── MLflow Button ─────────────────────────────────────────────────────────────
+function MLflowButton({ runId, onNotify }) {
+  const [loading, setLoading] = useState(false);
+
+  const openMlflow = async () => {
+    if (!runId) {
+      window.open('http://localhost:5000', '_blank');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/mlflow/run/${runId}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      window.open(data.mlflow_url || 'http://localhost:5000', '_blank');
+    } catch {
+      window.open('http://localhost:5000', '_blank');
+      onNotify('🔬 Ouverture de MLflow UI — cherchez le run manuellement', 'info');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={openMlflow}
+      disabled={loading}
+      title="Voir dans MLflow UI"
+      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-orange-500/40 bg-orange-500/10 text-orange-300 hover:bg-orange-500/20 transition-all disabled:opacity-50"
+    >
+      {loading ? (
+        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.3" strokeWidth="3"/>
+          <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+        </svg>
+      ) : '🔬'} MLflow
+    </button>
+  );
+}
+
 // ── History page ──────────────────────────────────────────────────────────────
 function HistoryPage({ onNotify }) {
-  const [runs, setRuns]     = useState([]);
-  const [loading, setLoad]  = useState(true);
-  const [open, setOpen]     = useState(null);
+  const [runs, setRuns]    = useState([]);
+  const [loading, setLoad] = useState(true);
+  const [open, setOpen]    = useState(null);
 
   useEffect(() => {
     getHistory()
@@ -40,8 +82,8 @@ function HistoryPage({ onNotify }) {
       .finally(() => setLoad(false));
   }, []);
 
-  const MODEL_ICON = { logistic_regression: '⚡', random_forest: '🌲', svm: '🔷', knn: '🎯' };
-  const MODEL_NAME = { logistic_regression: 'Logistic Regression', random_forest: 'Random Forest', svm: 'SVM', knn: 'KNN' };
+  const MODEL_ICON  = { logistic_regression: '⚡', random_forest: '🌲', svm: '🔷', knn: '🎯' };
+  const MODEL_NAME  = { logistic_regression: 'Logistic Regression', random_forest: 'Random Forest', svm: 'SVM', knn: 'KNN' };
   const MODEL_COLOR = {
     logistic_regression: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
     random_forest:       'text-green-400 bg-green-500/10 border-green-500/30',
@@ -69,15 +111,31 @@ function HistoryPage({ onNotify }) {
 
   return (
     <div className="space-y-4">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-white">Historique des expériences</h2>
-        <p className="text-sm text-gray-500 mt-1">{runs.length} run(s) enregistré(s)</p>
+
+      {/* ── En-tête avec bouton MLflow global ── */}
+      <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-white">Historique des expériences</h2>
+          <p className="text-sm text-gray-500 mt-1">{runs.length} run(s) enregistré(s)</p>
+        </div>
+
+        {/* Bouton global : ouvre MLflow UI (liste de tous les runs) */}
+        <button
+          onClick={() => window.open('http://localhost:5000', '_blank')}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-orange-500/40 bg-orange-500/10 text-orange-300 text-sm font-semibold hover:bg-orange-500/20 transition-all"
+        >
+          🔬 Ouvrir MLflow UI
+        </button>
       </div>
+
+      {/* ── Liste des runs ── */}
       {runs.map((run, i) => {
         const colors = MODEL_COLOR[run.model] || MODEL_COLOR.random_forest;
         const isOpen = open === i;
         return (
           <div key={run.id || i} className={`bg-gray-900/60 rounded-2xl border transition-all ${isOpen ? 'border-white/15' : 'border-white/8'}`}>
+
+            {/* Row principale */}
             <div
               onClick={() => setOpen(isOpen ? null : i)}
               className="flex items-center gap-4 p-4 cursor-pointer flex-wrap"
@@ -97,27 +155,50 @@ function HistoryPage({ onNotify }) {
                   ) : null
                 )}
               </div>
-              <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${colors}`}>{(run.id || `run-${i+1}`).slice(0,8)}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${colors}`}>
+                {(run.id || `run-${i + 1}`).slice(0, 8)}
+              </span>
               <span className="text-gray-600 text-sm">{isOpen ? '▲' : '▼'}</span>
             </div>
 
+            {/* Panneau déroulant */}
             {isOpen && (
-              <div className="border-t border-white/8 p-4 bg-black/20 rounded-b-2xl space-y-3">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Hyperparamètres</p>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(run.params || {}).map(([k, v]) => (
-                    <span key={k} className="text-xs px-2 py-1 bg-white/5 rounded-lg text-gray-400">
-                      <span className="text-gray-600">{k}: </span>
-                      <span className={`font-mono ${colors.split(' ')[0]}`}>{String(v)}</span>
-                    </span>
-                  ))}
+              <div className="border-t border-white/8 p-4 bg-black/20 rounded-b-2xl space-y-4">
+
+                {/* Hyperparamètres */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Hyperparamètres</p>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(run.params || {}).map(([k, v]) => (
+                      <span key={k} className="text-xs px-2 py-1 bg-white/5 rounded-lg text-gray-400">
+                        <span className="text-gray-600">{k}: </span>
+                        <span className={`font-mono ${colors.split(' ')[0]}`}>{String(v)}</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
-                <button
-                  onClick={() => onNotify('🔄 Rollback — implémentez POST /rollback sur le backend', 'info')}
-                  className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${colors}`}
-                >
-                  🔄 Rollback vers cette version
-                </button>
+
+                {/* Actions */}
+                <div className="flex flex-wrap gap-2 pt-1">
+
+                  {/* ── Bouton MLflow par run ── */}
+                  <MLflowButton runId={run.id} onNotify={onNotify} />
+
+                  {/* Rollback */}
+                  <button
+                    onClick={() => onNotify('🔄 Rollback — implémentez POST /rollback sur le backend', 'info')}
+                    className={`px-4 py-1.5 text-xs font-semibold rounded-lg border transition-all ${colors}`}
+                  >
+                    🔄 Rollback vers cette version
+                  </button>
+                </div>
+
+                {/* Lien MLflow run ID si disponible */}
+                {run.mlflow_run_id && (
+                  <p className="text-xs text-gray-600 font-mono">
+                    MLflow run ID : <span className="text-orange-400/70">{run.mlflow_run_id}</span>
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -129,7 +210,7 @@ function HistoryPage({ onNotify }) {
 
 // ── App root ──────────────────────────────────────────────────────────────────
 const NAV = [
-  { id: 'dashboard', label: 'Dashboard', icon: '⚡' },
+  { id: 'dashboard', label: 'Dashboard',  icon: '⚡' },
   { id: 'predict',   label: 'Prédiction', icon: '🎯' },
   { id: 'history',   label: 'Historique', icon: '📋' },
 ];
@@ -190,11 +271,11 @@ export default function App() {
 
         <div className="flex items-center gap-2 text-xs">
           <span className={`w-2 h-2 rounded-full ${
-            apiStatus === 'ok' ? 'bg-green-500 animate-pulse' :
+            apiStatus === 'ok'    ? 'bg-green-500 animate-pulse' :
             apiStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'
           }`} />
           <span className={
-            apiStatus === 'ok' ? 'text-green-400' :
+            apiStatus === 'ok'    ? 'text-green-400' :
             apiStatus === 'error' ? 'text-red-400' : 'text-yellow-400'
           }>
             {apiStatus === 'ok' ? 'API Connectée' : apiStatus === 'error' ? 'API Hors ligne' : 'Connexion…'}
